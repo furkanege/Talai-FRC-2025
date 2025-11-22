@@ -29,7 +29,7 @@ All derivatives must remain open-source under **GPL-3.0**.
 ## 📁 Project Structure
 src/main/java/frc/robot
  ├── Main.java
- └── Robot.java
+   └── Robot.java
 
 ---
 
