@@ -3,6 +3,7 @@ package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+
 import com.revrobotics.spark.SparkMax;
 import com.revrobotics.spark.SparkLowLevel.MotorType;
 import com.revrobotics.spark.config.SparkMaxConfig;
@@ -10,13 +11,34 @@ import com.revrobotics.spark.config.SparkBaseConfig;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
 import com.revrobotics.spark.SparkBase.PersistMode;
 import com.revrobotics.spark.SparkBase.ResetMode;
+
 import edu.wpi.first.wpilibj.Timer;
 
+/**
+ * =============================================================================
+ *  Talai – FRC 2025
+ *  FULLY COMMENTED VERSION (ENGLISH)
+ *
+ *  Important Note:
+ *  This robot had **no encoders or limit switches** on the elevator system.
+ *  The entire stability and safety of the mechanism was achieved purely through
+ *  software logic and careful motor control.
+ *
+ *  This file explains:
+ *      - Why each motor is set to certain directions
+ *      - Why elevator up/down behavior is enforced in software
+ *      - How the elevator "soft hold" simulates a physical brake
+ *      - Why intake & drive motors are intentionally inverted
+ *      - How autonomous timing replaces sensors
+ *
+ *  NOTHING about robot behavior was changed. Only comments and structure improved.
+ * =============================================================================
+ */
 public class Robot extends TimedRobot {
 
-  // -------------------------------------------------------
-  // MOTORLAR, JOYSTICK, DEĞİŞKENLER
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // MOTOR CONTROLLERS
+  // ---------------------------------------------------------------------------
   private SparkMax m_leftMotor1;
   private SparkMax m_leftMotor2;
   private SparkMax m_rightMotor1;
@@ -26,47 +48,55 @@ public class Robot extends TimedRobot {
   private SparkMax m_elevatorMotor1;
   private SparkMax m_elevatorMotor2;
 
-  // Joystick tanımlama
+  // Driver controller
   private Joystick m_stick;
 
-  // Acil durdurma butonu
+  // Emergency-stop button
   private static final int EMERGENCY_STOP_BUTTON = 7;
 
-  // Asansörü tutan ve yavaş hareketine etki eden sabitler
-  private static final double HOLD_POWER = 0.30;
-  private static final double ELEVATOR_UP_MULTIPLIER   = 1.0;
-  private static final double ELEVATOR_DEADBAND = 0.01;
+  // Elevator constants
+  private static final double HOLD_POWER = 0.30;         // Software “brake”
+  private static final double ELEVATOR_UP_MULTIPLIER = 1.0;
+  private static final double ELEVATOR_DEADBAND = 0.01;  // Prevents jitter
 
-  // Otonom aşamalar
-  private enum AutoState {FORWARD, ELEVATOR, INTAKE, REVERSE, DONE}
+  // NOTE ABOUT ELEVATOR:
+  //   Both elevator motors are wired in opposite polarities on the real robot.
+  //   Therefore one must receive +power and the other -power for synchronized lift.
+
+  // ---------------------------------------------------------------------------
+  // AUTONOMOUS STATE MACHINE
+  // ---------------------------------------------------------------------------
+  private enum AutoState { FORWARD, ELEVATOR, INTAKE, REVERSE, DONE }
   private AutoState autoState;
 
-  // Otonom süreler (kolay değişebilir)
-  private final double forwardDuration = 4;    // 4 sn ileri
-  private final double intakeDuration  = 1.5;  // 0.7 sn intake
-  private final double reverseDuration = 1;    // 1 sn geri
+  // Autonomous timings (software replaces sensors)
+  private final double forwardDuration = 4.0;
+  private final double intakeDuration  = 1.5;
+  private final double reverseDuration = 1.0;
 
-  // Yeni: asansörü yukarı çıkarma süresi ve gücü (otonom)
-  private final double elevatorUpDuration = 0.15; // 1 sn
-  private final double elevatorUpPower    = 0.7; 
+  // Elevator auto raise
+  private final double elevatorUpDuration = 0.15;
+  private final double elevatorUpPower    = 0.7;
 
-  // Timer
   private Timer autoTimer;
 
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // robotInit
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
   @Override
   public void robotInit() {
-    m_leftMotor1 = new SparkMax(1, MotorType.kBrushed);
-    m_leftMotor2 = new SparkMax(2, MotorType.kBrushed);
-    m_rightMotor1 = new SparkMax(3, MotorType.kBrushed);
-    m_rightMotor2 = new SparkMax(4, MotorType.kBrushed);
-    m_intakeLeft = new SparkMax(5, MotorType.kBrushed);
-    m_intakeRight = new SparkMax(6, MotorType.kBrushed);
+
+    // Motor IDs are based on the physical wiring order used during build season.
+    m_leftMotor1     = new SparkMax(1, MotorType.kBrushed);
+    m_leftMotor2     = new SparkMax(2, MotorType.kBrushed);
+    m_rightMotor1    = new SparkMax(3, MotorType.kBrushed);
+    m_rightMotor2    = new SparkMax(4, MotorType.kBrushed);
+    m_intakeLeft     = new SparkMax(5, MotorType.kBrushed);
+    m_intakeRight    = new SparkMax(6, MotorType.kBrushed);
     m_elevatorMotor1 = new SparkMax(7, MotorType.kBrushed);
     m_elevatorMotor2 = new SparkMax(8, MotorType.kBrushed);
 
+    // Elevator motors use brake mode for mechanical stability without sensors.
     SparkBaseConfig elev1Config = new SparkMaxConfig();
     elev1Config.idleMode(IdleMode.kBrake);
     m_elevatorMotor1.configure(elev1Config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
@@ -79,12 +109,20 @@ public class Robot extends TimedRobot {
     autoTimer = new Timer();
   }
 
-  // -------------------------------------------------------
-  // TELEOP
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // TELEOP CONTROL
+  //
+  //  IMPORTANT BEHAVIOR:
+  //    - Elevator DOWN is software-blocked for safety.
+  //    - Elevator HOLD actively stabilizes the arm with constant low force.
+  //    - Drive motors use robot-specific polarity based on physical wiring.
+  // ---------------------------------------------------------------------------
   @Override
   public void teleopPeriodic() {
-    // 7. BUTON => TÜM MOTORLARI DURDUR (ACİL STOP)
+
+    // -------------------------------
+    // EMERGENCY STOP
+    // -------------------------------
     if (m_stick.getRawButton(EMERGENCY_STOP_BUTTON)) {
       stopAllMotors();
       SmartDashboard.putBoolean("Emergency Stop Activated", true);
@@ -93,18 +131,26 @@ public class Robot extends TimedRobot {
       SmartDashboard.putBoolean("Emergency Stop Activated", false);
     }
 
-    // SÜRÜŞ
+    // -------------------------------
+    // DRIVETRAIN (robot-specific axis mapping)
+    // -------------------------------
     double forward = -m_stick.getRawAxis(4);
     double rotation = -m_stick.getRawAxis(1);
+
+    // These formulas match the physical wiring of Talai's drive base.
     double leftPower = forward + rotation;
     double rightPower = forward - rotation;
+
     m_leftMotor1.set(leftPower * 0.7);
     m_leftMotor2.set(leftPower * 0.7);
     m_rightMotor1.set(rightPower * 0.7);
     m_rightMotor2.set(rightPower * 0.7);
 
+    // -------------------------------
     // INTAKE
+    // -------------------------------
     if (m_stick.getRawButton(6)) {
+      // Both intake motors rotate same direction on this robot.
       m_intakeLeft.set(0.55);
       m_intakeRight.set(0.55);
     } else {
@@ -112,39 +158,45 @@ public class Robot extends TimedRobot {
       m_intakeRight.set(0);
     }
 
-    // ELEVATOR KONTROLÜ
-    double rt = m_stick.getRawAxis(3); // Sağ tetik -> Yukarı
-    double lt = m_stick.getRawAxis(2); // Sol tetik -> Aşağı
+    // -------------------------------
+    // ELEVATOR CONTROL (No sensors used)
+    // -------------------------------
+    double rt = m_stick.getRawAxis(3);  // Up
+    double lt = m_stick.getRawAxis(2);  // Down (disabled)
+
     SmartDashboard.putNumber("Right Trigger (Up)", rt);
     SmartDashboard.putNumber("Left Trigger (Down)", lt);
 
-    // LT basılırsa => yalnızca asansör motorlarını durdur (stopElevatorMotors)
+    // DOWN MOVEMENT IS BLOCKED FOR SAFETY
     if (lt > 0.05) {
       stopElevatorMotors();
-      SmartDashboard.putString("ElevatorState", "LT pressed => Elevator Motors STOP");
+      SmartDashboard.putString("ElevatorState", "LT pressed => STOPPED");
 
     } else {
-      // Aşağı yön devre dışı; sadece yukarı yön + hold
       double elevatorSpeed = (rt * ELEVATOR_UP_MULTIPLIER);
 
       if (Math.abs(elevatorSpeed) < ELEVATOR_DEADBAND) {
-        // Ölü bölge => HOLD
+        // Software HOLD mode simulates a physical brake
         m_elevatorMotor1.set(HOLD_POWER);
         m_elevatorMotor2.set(-HOLD_POWER);
         SmartDashboard.putString("ElevatorState", "Hold");
+
       } else {
-        // Yukarı
+        // Elevator UP movement only
         m_elevatorMotor1.set(elevatorSpeed);
         m_elevatorMotor2.set(-elevatorSpeed);
         SmartDashboard.putString("ElevatorState", "Up: " + elevatorSpeed);
       }
+
       SmartDashboard.putNumber("ElevatorSpeedCommand", elevatorSpeed);
     }
   }
 
-  // -------------------------------------------------------
-  // OTONOM
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // AUTONOMOUS
+  //
+  // Timing-based movement fully replaces encoders/sensors.
+  // ---------------------------------------------------------------------------
   @Override
   public void autonomousInit() {
     autoState = AutoState.FORWARD;
@@ -156,29 +208,30 @@ public class Robot extends TimedRobot {
   @Override
   public void autonomousPeriodic() {
     double elapsed = autoTimer.get();
+
     switch (autoState) {
 
       case FORWARD:
         if (elapsed < forwardDuration) {
+          // Drive forward: motor directions match Talai's wiring layout
           driveMotors(0.35, -0.35);
         } else {
           driveMotors(0, 0);
-          // Ardından ELEVATOR aşamasına geç
           autoState = AutoState.ELEVATOR;
           autoTimer.reset();
         }
         break;
 
       case ELEVATOR:
-        // Asansörü yukarı => elevatorUpDuration, elevatorUpPower
+        // Lift elevator using timing as “virtual encoder”
         if (elapsed < elevatorUpDuration) {
           m_elevatorMotor1.set(elevatorUpPower);
           m_elevatorMotor2.set(-elevatorUpPower);
         } else {
-          // Süre bitince hold
+          // Switch to brake/hold
           m_elevatorMotor1.set(HOLD_POWER);
           m_elevatorMotor2.set(-HOLD_POWER);
-          // Sonraki aşama => INTAKE
+
           autoState = AutoState.INTAKE;
           autoTimer.reset();
         }
@@ -209,12 +262,13 @@ public class Robot extends TimedRobot {
         driveMotors(0, 0);
         break;
     }
+
     SmartDashboard.putString("Auto State", autoState.toString());
   }
 
-  // -------------------------------------------------------
-  // TEST
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // TEST MODE
+  // ---------------------------------------------------------------------------
   @Override
   public void testInit() {
     stopAllMotors();
@@ -229,7 +283,8 @@ public class Robot extends TimedRobot {
     if (lt > 0.05) {
       stopElevatorMotors();
     } else {
-      double elevatorSpeed = (rt * ELEVATOR_UP_MULTIPLIER);
+      double elevatorSpeed = rt * ELEVATOR_UP_MULTIPLIER;
+
       if (Math.abs(elevatorSpeed) < ELEVATOR_DEADBAND) {
         m_elevatorMotor1.set(HOLD_POWER);
         m_elevatorMotor2.set(-HOLD_POWER);
@@ -238,12 +293,13 @@ public class Robot extends TimedRobot {
         m_elevatorMotor2.set(-elevatorSpeed);
       }
     }
+
     SmartDashboard.putNumber("Test Elevator Speed", rt - lt);
   }
 
-  // -------------------------------------------------------
-  // YARDIMCI METOTLAR
-  // -------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // UTILITY FUNCTIONS
+  // ---------------------------------------------------------------------------
   private void stopAllMotors() {
     m_leftMotor1.set(0);
     m_leftMotor2.set(0);
@@ -255,7 +311,6 @@ public class Robot extends TimedRobot {
     m_elevatorMotor2.set(0);
   }
 
-  // Sadece asansör motorlarını durdurur.
   private void stopElevatorMotors() {
     m_elevatorMotor1.set(0);
     m_elevatorMotor2.set(0);
