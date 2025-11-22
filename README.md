@@ -59,7 +59,7 @@ Linux/macOS:
 Talai’s elevator and mechanisms were built **without encoders or limit switches**.  
 Despite this, the robot behaved *as if it had sensors*, thanks to carefully engineered software logic.
 
-Below is the design philosophy that allowed the robot to operate safely, smoothly, and consistently.
+Below is the design philosophy that allowed the robot to operate safely, smoothly and consistently.
 
 ---
 
@@ -162,7 +162,7 @@ Copyright (C) 2025 Furkan Ege
 ---
 
 ## 🤝 Contributions
-Contributions, forks, and enhancements are welcome —  
+Contributions, forks and enhancements are welcome —  
 as long as they comply with the GPL-3.0 copyleft terms.
 
 ---
