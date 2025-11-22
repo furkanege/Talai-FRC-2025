@@ -24,9 +24,6 @@ All derivatives must remain open-source under **GPL-3.0**.
 src/main/java/frc/robot/
 │── Robot.java
 │── Main.java
-│── Constants.java
-│── subsystems/
-│── commands/
 
 ## 🚀 Deployment
 To deploy the robot code:
