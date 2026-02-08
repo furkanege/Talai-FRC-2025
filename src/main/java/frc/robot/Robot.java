@@ -53,6 +53,7 @@ public class Robot extends TimedRobot {
 
   // Emergency-stop button
   private static final int EMERGENCY_STOP_BUTTON = 7;
+  private boolean m_emergencyLatched = false;
 
   // Elevator constants
   private static final double HOLD_POWER = 0.30;         // Software “brake”
@@ -107,6 +108,7 @@ public class Robot extends TimedRobot {
 
     m_stick = new Joystick(0);
     autoTimer = new Timer();
+    m_emergencyLatched = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -124,12 +126,16 @@ public class Robot extends TimedRobot {
     // EMERGENCY STOP
     // -------------------------------
     if (m_stick.getRawButton(EMERGENCY_STOP_BUTTON)) {
+      m_emergencyLatched = true;
+    }
+
+    if (m_emergencyLatched) {
       stopAllMotors();
       SmartDashboard.putBoolean("Emergency Stop Activated", true);
       return;
-    } else {
-      SmartDashboard.putBoolean("Emergency Stop Activated", false);
     }
+
+    SmartDashboard.putBoolean("Emergency Stop Activated", false);
 
     // -------------------------------
     // DRIVETRAIN (robot-specific axis mapping)
@@ -273,6 +279,12 @@ public class Robot extends TimedRobot {
   public void testInit() {
     stopAllMotors();
     SmartDashboard.putString("Robot Mode", "TEST MODE");
+  }
+
+  @Override
+  public void disabledInit() {
+    m_emergencyLatched = false;
+    stopAllMotors();
   }
 
   @Override
