@@ -21,8 +21,6 @@ Build System: GradleRIO
 Supported Hardware:
 - RoboRIO 2.0  
 - SparkMAX (Brushed)  
-- navX  
-- USB Camera  
 - REVLib
 
 ----------------------------------------
